@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Item, Order, WaitlistConfig } from '../types';
-import { CheckCircleIcon, ExclamationTriangleIcon, PlusIcon, MinusIcon, SparklesIcon, BanknotesIcon } from '@heroicons/react/24/solid';
+import { CheckCircleIcon, ExclamationTriangleIcon, PlusIcon, MinusIcon, SparklesIcon, BanknotesIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 
 interface Props {
   mnemonic: string;
@@ -9,26 +9,24 @@ interface Props {
   orders: Order[];
   waitlistConfig: WaitlistConfig;
   onOrderPlaced: (newItems: Item[], newOrders: Order[]) => void;
+  isLoadingInventory: boolean;
 }
 
-const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig, onOrderPlaced }) => {
+const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig, onOrderPlaced, isLoadingInventory }) => {
   const item = useMemo(() => items.find(i => i.mnemonic === mnemonic), [items, mnemonic]);
   const [formData, setFormData] = useState({ name: '', email: '', quantity: '1', address: '' });
   const [extraQuantities, setExtraQuantities] = useState<Record<string, number>>({});
   const [placed, setPlaced] = useState<{ status: 'success' | 'waitlist', orderId: string, total: number } | null>(null);
 
-  // Simplified and more robust truthy check for mobile cross-compatibility
   const isTruthy = (val: any) => {
     if (typeof val === 'boolean') return val;
     const s = String(val).toLowerCase();
     return s === 'true' || s === '1' || s === 'yes' || s === 'checked';
   };
 
-  // High-reliability upsell filtering for mobile (Android/iOS)
   const upsellItems = useMemo(() => {
     return items.filter(i => {
       const upsellActive = isTruthy(i.allowUpsell);
-      // Show if it's an upsell item, NOT the current item, and either has stock or waitlist is available
       return upsellActive && i.mnemonic !== mnemonic && (i.quantity > 0 || waitlistConfig.maxSize > 0);
     });
   }, [items, mnemonic, waitlistConfig.maxSize]);
@@ -45,13 +43,29 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
     return total;
   };
 
+  // NEW: Handling the loading state during initial QR scan sync
+  if (!item && isLoadingInventory) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+        <div className="max-w-md w-full text-center p-12 bg-white rounded-[3rem] border border-slate-200 shadow-xl">
+          <ArrowPathIcon className="w-16 h-16 text-indigo-500 mx-auto mb-6 animate-spin" />
+          <h2 className="text-xl font-black text-slate-800 tracking-tight uppercase tracking-[0.2em]">Verifying Item</h2>
+          <p className="text-slate-400 mt-4 text-xs font-bold uppercase">Syncing with secure database...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Refined "Access Denied" screen
   if (!item) {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-        <div className="max-w-md w-full text-center p-8 bg-white rounded-3xl border border-slate-200 shadow-xl">
+        <div className="max-w-md w-full text-center p-10 bg-white rounded-[3rem] border-2 border-amber-100 shadow-xl">
           <ExclamationTriangleIcon className="w-16 h-16 text-amber-500 mx-auto mb-4" />
           <h2 className="text-2xl font-black text-slate-800 tracking-tight">Access Denied</h2>
-          <p className="text-slate-500 mt-4 text-sm font-bold">This item code is invalid or the store is currently offline.</p>
+          <p className="text-slate-500 mt-4 text-sm font-bold px-4">
+            The item code <span className="text-indigo-600 font-mono">#{mnemonic}</span> was not found. Please ensure you scanned the correct QR code.
+          </p>
         </div>
       </div>
     );
@@ -95,7 +109,7 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
     });
   };
 
-  // SUCCESS SCREEN: Removed all navigation out. User must close the browser.
+  // SUCCESS SCREEN: All navigation completely removed
   if (placed) {
     return (
       <div className="min-h-screen bg-slate-50 p-6 flex items-start justify-center pt-12 animate-in zoom-in duration-300">
@@ -106,16 +120,16 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
           </h2>
           <div className="text-slate-500 mt-6 font-bold text-sm px-4 space-y-4">
             <p>Thank you, {formData.name}. We've received your request.</p>
-            <p className="text-indigo-600 bg-indigo-50 py-4 px-6 rounded-2xl border border-indigo-100 leading-relaxed">
-              An order confirmation email for payment will be sent to you shortly. Please check your inbox.
+            <p className="text-indigo-600 bg-indigo-50 py-4 px-6 rounded-2xl border border-indigo-100 leading-relaxed font-black">
+              An order confirmation email for payment will be sent to you shortly.
             </p>
           </div>
           <div className="mt-8 bg-slate-50 rounded-3xl p-6 border border-slate-100 text-left space-y-4">
             <div className="flex justify-between text-[10px] font-black"><span className="text-slate-400 uppercase tracking-widest">Reference</span><span className="font-mono text-slate-900">{placed.orderId}</span></div>
             <div className="flex justify-between items-center pt-4 border-t border-slate-200"><span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Total</span><span className="text-3xl font-black text-indigo-600">${placed.total.toFixed(2)}</span></div>
           </div>
-          <div className="mt-10 border-t border-slate-100 pt-6">
-            <p className="text-[10px] font-black uppercase text-slate-300 tracking-[0.3em]">Thank you for shopping</p>
+          <div className="mt-12 border-t border-slate-100 pt-8">
+            <p className="text-[10px] font-black uppercase text-slate-300 tracking-[0.4em]">Secure Checkout Complete</p>
           </div>
         </div>
       </div>
@@ -165,7 +179,6 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
               </div>
             </div>
 
-            {/* UPSELL SECTION: Improved rendering for mobile height */}
             {upsellItems.length > 0 && (
               <div className="space-y-4 mt-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 <div className="flex items-center gap-3 px-2">
@@ -199,7 +212,6 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
               </div>
             )}
 
-            {/* Sticky-style Submit Block with enough padding to avoid clipping */}
             <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl flex flex-col items-center gap-6 border-b-[12px] border-indigo-600 mt-12">
               <div className="flex items-center gap-4 w-full justify-between">
                 <div className="flex flex-col">
@@ -216,7 +228,7 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
             </div>
           </form>
           
-          <p className="text-center text-[9px] font-black uppercase tracking-[0.4em] text-slate-300 mt-10">Mnemonic Checkout Hub v1.3</p>
+          <p className="text-center text-[9px] font-black uppercase tracking-[0.4em] text-slate-300 mt-10">Mnemonic Checkout Hub v1.4</p>
         </div>
       </div>
     </div>
