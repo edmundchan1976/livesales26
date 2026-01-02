@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Item, Order, WaitlistConfig } from '../types';
-import { CheckCircleIcon, ExclamationTriangleIcon, PlusIcon, MinusIcon, SparklesIcon, BanknotesIcon, CameraIcon } from '@heroicons/react/24/solid';
+import { CheckCircleIcon, ExclamationTriangleIcon, PlusIcon, MinusIcon, SparklesIcon, BanknotesIcon } from '@heroicons/react/24/solid';
 
 interface Props {
   mnemonic: string;
@@ -17,11 +17,19 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
   const [extraQuantities, setExtraQuantities] = useState<Record<string, number>>({});
   const [placed, setPlaced] = useState<{ status: 'success' | 'waitlist', orderId: string, total: number } | null>(null);
 
-  // High-reliability upsell filtering for mobile
+  // Simplified and more robust truthy check for mobile cross-compatibility
+  const isTruthy = (val: any) => {
+    if (typeof val === 'boolean') return val;
+    const s = String(val).toLowerCase();
+    return s === 'true' || s === '1' || s === 'yes' || s === 'checked';
+  };
+
+  // High-reliability upsell filtering for mobile (Android/iOS)
   const upsellItems = useMemo(() => {
     return items.filter(i => {
-      const isUpsellEnabled = String(i.allowUpsell).toUpperCase() === 'TRUE' || i.allowUpsell === true || i.allowUpsell === 1 || i.allowUpsell === '1';
-      return isUpsellEnabled && i.mnemonic !== mnemonic && (i.quantity > 0 || waitlistConfig.maxSize > 0);
+      const upsellActive = isTruthy(i.allowUpsell);
+      // Show if it's an upsell item, NOT the current item, and either has stock or waitlist is available
+      return upsellActive && i.mnemonic !== mnemonic && (i.quantity > 0 || waitlistConfig.maxSize > 0);
     });
   }, [items, mnemonic, waitlistConfig.maxSize]);
 
@@ -32,7 +40,7 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
     let total = item.price * parseInt(formData.quantity || '0');
     (Object.entries(extraQuantities) as [string, number][]).forEach(([id, qty]) => {
       const extra = items.find(i => i.id === id);
-      if (extra) total += extra.price * qty;
+      if (extra && typeof qty === 'number') total += extra.price * qty;
     });
     return total;
   };
@@ -42,11 +50,8 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
       <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
         <div className="max-w-md w-full text-center p-8 bg-white rounded-3xl border border-slate-200 shadow-xl">
           <ExclamationTriangleIcon className="w-16 h-16 text-amber-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-black text-slate-800">Invalid QR Code</h2>
-          <p className="text-slate-500 mt-4 text-sm font-bold">Please scan the correct item to continue.</p>
-          <button onClick={() => window.location.reload()} className="mt-8 w-full py-5 bg-slate-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2">
-            <CameraIcon className="w-5 h-5" /> Try Scanning Again
-          </button>
+          <h2 className="text-2xl font-black text-slate-800 tracking-tight">Access Denied</h2>
+          <p className="text-slate-500 mt-4 text-sm font-bold">This item code is invalid or the store is currently offline.</p>
         </div>
       </div>
     );
@@ -61,7 +66,7 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
     const orderLines: { item: Item, qty: number }[] = [{ item: item as Item, qty: parseInt(formData.quantity) }];
     
     (Object.entries(extraQuantities) as [string, number][]).forEach(([id, qty]) => {
-      if (qty > 0) {
+      if (typeof qty === 'number' && qty > 0) {
         const ex = items.find(i => i.id === id);
         if (ex) orderLines.push({ item: ex, qty });
       }
@@ -83,9 +88,14 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
     });
 
     onOrderPlaced(updatedItems, [...orders, ...newOrders]);
-    setPlaced({ status: item.quantity >= parseInt(formData.quantity) ? 'success' : 'waitlist', orderId: sharedOrderId, total: finalTotal });
+    setPlaced({ 
+      status: item.quantity >= parseInt(formData.quantity) ? 'success' : 'waitlist', 
+      orderId: sharedOrderId, 
+      total: finalTotal 
+    });
   };
 
+  // SUCCESS SCREEN: Removed all navigation out. User must close the browser.
   if (placed) {
     return (
       <div className="min-h-screen bg-slate-50 p-6 flex items-start justify-center pt-12 animate-in zoom-in duration-300">
@@ -96,16 +106,16 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
           </h2>
           <div className="text-slate-500 mt-6 font-bold text-sm px-4 space-y-4">
             <p>Thank you, {formData.name}. We've received your request.</p>
-            <p className="text-indigo-600 bg-indigo-50 py-3 px-4 rounded-2xl border border-indigo-100">An order confirmation email for payment will be sent to you shortly.</p>
+            <p className="text-indigo-600 bg-indigo-50 py-4 px-6 rounded-2xl border border-indigo-100 leading-relaxed">
+              An order confirmation email for payment will be sent to you shortly. Please check your inbox.
+            </p>
           </div>
           <div className="mt-8 bg-slate-50 rounded-3xl p-6 border border-slate-100 text-left space-y-4">
             <div className="flex justify-between text-[10px] font-black"><span className="text-slate-400 uppercase tracking-widest">Reference</span><span className="font-mono text-slate-900">{placed.orderId}</span></div>
             <div className="flex justify-between items-center pt-4 border-t border-slate-200"><span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Total</span><span className="text-3xl font-black text-indigo-600">${placed.total.toFixed(2)}</span></div>
           </div>
-          <div className="mt-10">
-            <button onClick={() => { window.location.hash = ''; window.location.reload(); }} className="w-full py-5 bg-white text-slate-900 border-2 border-slate-200 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 active:scale-95 shadow-lg">
-              <CameraIcon className="w-5 h-5" /> Scan Another Item
-            </button>
+          <div className="mt-10 border-t border-slate-100 pt-6">
+            <p className="text-[10px] font-black uppercase text-slate-300 tracking-[0.3em]">Thank you for shopping</p>
           </div>
         </div>
       </div>
@@ -113,10 +123,10 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
   }
 
   return (
-    <div className="min-h-screen bg-white md:bg-slate-50 overflow-y-auto">
-      <div className="max-w-md mx-auto p-6 md:py-12 pb-32 animate-in fade-in duration-500">
-        <div className="bg-white p-6 md:p-8 rounded-[3rem] md:border md:border-slate-200 md:shadow-xl relative overflow-hidden">
-          {/* Header */}
+    <div className="min-h-screen bg-white md:bg-slate-50 flex flex-col">
+      <div className="max-w-md mx-auto w-full p-6 md:py-12 pb-48 animate-in fade-in duration-500">
+        <div className="bg-white p-6 md:p-10 rounded-[3rem] md:border md:border-slate-200 md:shadow-xl relative overflow-visible">
+          
           <div className="flex items-center gap-3 mb-6">
             <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full border border-indigo-100">{item.category}</span>
             <span className="text-xs font-mono font-bold text-slate-300">#{item.mnemonic}</span>
@@ -128,22 +138,20 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-8">
-            {/* Identity Form */}
             <div className="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 space-y-4">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Order Information</p>
-              <input required placeholder="Your Full Name" className="w-full p-5 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-black text-slate-800 shadow-sm"
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Identity & Delivery</p>
+              <input required placeholder="Your Full Name" className="w-full p-5 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-black text-slate-800 shadow-sm appearance-none"
                 value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-              <input required type="email" placeholder="Email Address" className="w-full p-5 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-black text-slate-800 shadow-sm"
+              <input required type="email" placeholder="Email Address" className="w-full p-5 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-black text-slate-800 shadow-sm appearance-none"
                 value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-              <input required placeholder="Shipping Address" className="w-full p-5 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-black text-slate-800 shadow-sm"
+              <input required placeholder="Shipping Address" className="w-full p-5 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-black text-slate-800 shadow-sm appearance-none"
                 value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
             </div>
 
-            {/* Quantity Selector */}
             <div className="bg-indigo-600/5 p-8 rounded-[2rem] border border-indigo-500/10 shadow-inner">
               <div className="flex justify-between items-center mb-6">
                 <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Quantity</p>
-                {isOutOfStock && <span className="text-[10px] font-black text-amber-600 bg-white px-3 py-1 rounded-full border border-amber-200 uppercase animate-pulse">Waitlist Only</span>}
+                {isOutOfStock && <span className="text-[10px] font-black text-amber-600 bg-white px-3 py-1 rounded-full border border-amber-200 uppercase animate-pulse">Waitlist</span>}
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
@@ -157,31 +165,31 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
               </div>
             </div>
 
-            {/* UPSELL SECTION: Improved Visibility */}
+            {/* UPSELL SECTION: Improved rendering for mobile height */}
             {upsellItems.length > 0 && (
-              <div className="space-y-4 mt-12 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+              <div className="space-y-4 mt-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 <div className="flex items-center gap-3 px-2">
                   <SparklesIcon className="w-5 h-5 text-indigo-500" />
-                  <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-400">Offer After: Recommended Extras</h3>
+                  <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-400">Recommended Extras</h3>
                 </div>
-                <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-4">
                   {upsellItems.map(up => {
                     const q = extraQuantities[up.id] || 0;
                     return (
-                      <div key={up.id} className={`bg-white border-2 rounded-[2.5rem] p-6 flex justify-between items-center transition-all ${q > 0 ? 'border-indigo-500 bg-indigo-50/20 shadow-lg' : 'border-slate-100'}`}>
+                      <div key={up.id} className={`bg-white border-2 rounded-[2.5rem] p-6 flex justify-between items-center transition-all duration-300 ${q > 0 ? 'border-indigo-500 bg-indigo-50/20 shadow-lg' : 'border-slate-100'}`}>
                         <div className="flex-1 pr-4">
-                          <p className="font-black text-slate-800 text-lg leading-none mb-1">{up.name}</p>
-                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">${up.price.toFixed(2)} per unit</p>
+                          <p className="font-black text-slate-800 text-lg leading-tight mb-1">{up.name}</p>
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">${up.price.toFixed(2)}</p>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 shrink-0">
                           {q > 0 ? (
-                            <div className="flex items-center gap-4 animate-in zoom-in duration-200">
-                              <button type="button" onClick={() => setExtraQuantities({...extraQuantities, [up.id]: Math.max(0, q - 1)})} className="w-10 h-10 rounded-xl bg-white border border-indigo-200 flex items-center justify-center text-indigo-600 shadow-sm"><MinusIcon className="w-5 h-5" /></button>
+                            <div className="flex items-center gap-4">
+                              <button type="button" onClick={() => setExtraQuantities({...extraQuantities, [up.id]: Math.max(0, q - 1)})} className="w-10 h-10 rounded-xl bg-white border border-indigo-200 flex items-center justify-center text-indigo-600 shadow-sm active:scale-75 transition-transform"><MinusIcon className="w-5 h-5" /></button>
                               <span className="font-black text-indigo-600 text-lg w-4 text-center">{q}</span>
-                              <button type="button" onClick={() => setExtraQuantities({...extraQuantities, [up.id]: q + 1})} className="w-10 h-10 rounded-xl bg-white border border-indigo-200 flex items-center justify-center text-indigo-600 shadow-sm"><PlusIcon className="w-5 h-5" /></button>
+                              <button type="button" onClick={() => setExtraQuantities({...extraQuantities, [up.id]: q + 1})} className="w-10 h-10 rounded-xl bg-white border border-indigo-200 flex items-center justify-center text-indigo-600 shadow-sm active:scale-75 transition-transform"><PlusIcon className="w-5 h-5" /></button>
                             </div>
                           ) : (
-                            <button type="button" onClick={() => setExtraQuantities({...extraQuantities, [up.id]: 1})} className="px-6 py-3 rounded-2xl bg-indigo-50 border-2 border-indigo-100 text-[10px] font-black uppercase tracking-[0.1em] text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm">Add Item</button>
+                            <button type="button" onClick={() => setExtraQuantities({...extraQuantities, [up.id]: 1})} className="px-6 py-3 rounded-2xl bg-indigo-50 border-2 border-indigo-100 text-[10px] font-black uppercase tracking-widest text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all active:scale-95">Add</button>
                           )}
                         </div>
                       </div>
@@ -191,11 +199,11 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
               </div>
             )}
 
-            {/* Submit Block */}
-            <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl flex flex-col items-center gap-6 border-b-[12px] border-indigo-600 mt-12 mb-8">
+            {/* Sticky-style Submit Block with enough padding to avoid clipping */}
+            <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl flex flex-col items-center gap-6 border-b-[12px] border-indigo-600 mt-12">
               <div className="flex items-center gap-4 w-full justify-between">
                 <div className="flex flex-col">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Final Total Payable</p>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Final Total</p>
                   <p className="text-5xl font-black tracking-tighter leading-none">${calculateTotal().toFixed(2)}</p>
                 </div>
                 <div className="bg-indigo-600/20 p-4 rounded-2xl">
@@ -203,12 +211,12 @@ const BuyerPortal: React.FC<Props> = ({ mnemonic, items, orders, waitlistConfig,
                 </div>
               </div>
               <button type="submit" disabled={isOutOfStock && !canWaitlist} className={`w-full py-6 rounded-2xl font-black uppercase tracking-[0.3em] text-[12px] shadow-2xl transition-all active:scale-95 ${isOutOfStock ? (canWaitlist ? 'bg-amber-500 text-white' : 'bg-slate-700 text-slate-500 cursor-not-allowed') : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>
-                {isOutOfStock ? (canWaitlist ? 'Join Waitlist' : 'Out of Stock') : 'Submit Secure Order'}
+                {isOutOfStock ? (canWaitlist ? 'Join Waitlist' : 'Out of Stock') : 'Submit Order'}
               </button>
             </div>
           </form>
           
-          <p className="text-center text-[9px] font-black uppercase tracking-[0.4em] text-slate-300 mt-10">Mnemonic Checkout Hub v1.2</p>
+          <p className="text-center text-[9px] font-black uppercase tracking-[0.4em] text-slate-300 mt-10">Mnemonic Checkout Hub v1.3</p>
         </div>
       </div>
     </div>
