@@ -169,7 +169,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* HEADER IS HIDDEN FOR BUYERS TO ENSURE NO ACCESS TO SELLER WEB */}
       {view === 'seller' && (
         <nav className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
           <div className="flex items-center gap-2">
@@ -205,6 +204,7 @@ const App: React.FC = () => {
           <BuyerPortal 
             mnemonic={activeMnemonic || ''} items={items} orders={orders}
             waitlistConfig={waitlistConfig} onOrderPlaced={saveAndSync}
+            isLoadingInventory={isLoadingItems}
           />
         )}
       </main>
