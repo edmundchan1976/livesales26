@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Item, Order, ViewMode, WaitlistConfig } from './types';
 import SellerDashboard from './components/SellerDashboard';
 import BuyerPortal from './components/BuyerPortal';
@@ -18,6 +18,7 @@ const App: React.FC = () => {
   const [activeMnemonic, setActiveMnemonic] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [isLoadingItems, setIsLoadingItems] = useState(false);
+  const hasAttemptedInitialSync = useRef(false);
 
   useEffect(() => {
     const savedItems = localStorage.getItem(STORAGE_KEY_ITEMS);
@@ -39,27 +40,35 @@ const App: React.FC = () => {
     if (savedWaitlist) setWaitlistConfig(JSON.parse(savedWaitlist));
   }, []);
 
+  const isTruthy = (val: any) => {
+    if (typeof val === 'boolean') return val;
+    if (val === null || val === undefined) return false;
+    const s = String(val).toLowerCase();
+    return s === 'true' || s === '1' || s === 'yes' || s === 'checked';
+  };
+
   const fetchInventoryFromSheets = useCallback(async (targetUrl?: string) => {
     const url = targetUrl || webhookUrl;
-    if (!url || isLoadingItems) return;
+    if (!url) return;
     setIsLoadingItems(true);
     try {
-      const response = await fetch(url);
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(id);
+      
       const data = await response.json();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         const mappedItems: Item[] = data.map((it: any, idx: number) => ({
           id: it.id || it.mnemonic || `sync-${idx}`,
           category: it.category || 'General',
           name: it.name || 'Unknown Item',
           price: parseFloat(it.price) || 0,
           quantity: parseInt(it.quantity) || 0,
-          mnemonic: it.mnemonic || '',
+          mnemonic: (it.mnemonic || '').toUpperCase(),
           order: idx,
-          allowUpsell: 
-            String(it.allowUpsell).toUpperCase() === 'TRUE' || 
-            it.allowUpsell === true || 
-            it.allowUpsell === 1 || 
-            it.allowUpsell === '1'
+          allowUpsell: isTruthy(it.allowUpsell)
         }));
         setItems(mappedItems);
         localStorage.setItem(STORAGE_KEY_ITEMS, JSON.stringify(mappedItems));
@@ -68,8 +77,9 @@ const App: React.FC = () => {
       console.error("Fetch failed", e);
     } finally {
       setIsLoadingItems(false);
+      hasAttemptedInitialSync.current = true;
     }
-  }, [webhookUrl, isLoadingItems]);
+  }, [webhookUrl]);
 
   useEffect(() => {
     const handleNavigation = async () => {
@@ -80,17 +90,19 @@ const App: React.FC = () => {
       
       if (encodedWebhook) {
         try {
-          const decoded = atob(decodeURIComponent(encodedWebhook));
+          const decoded = atob(decodeURIComponent(encodedWebhook).replace(/\s/g, '+'));
           if (decoded.startsWith('http')) {
             currentWebhook = decoded;
             setWebhookUrl(decoded);
             localStorage.setItem(STORAGE_KEY_WEBHOOK, decoded);
           }
-        } catch (e) { }
+        } catch (e) {
+          console.error("Webhook decode failed", e);
+        }
       }
 
       if (hash.startsWith('#/order/')) {
-        const mnemonic = hash.replace('#/order/', '').split('?')[0];
+        const mnemonic = hash.replace('#/order/', '').split('?')[0].toUpperCase();
         setActiveMnemonic(mnemonic);
         setView('buyer');
         if (currentWebhook) {
@@ -177,7 +189,7 @@ const App: React.FC = () => {
           </div>
           <div className="flex gap-4 items-center">
             {lastSync && (
-              <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 animate-in fade-in">
+              <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100">
                 <span className="text-[9px] font-black uppercase tracking-widest">SGT: {lastSync}</span>
               </div>
             )}
@@ -197,14 +209,21 @@ const App: React.FC = () => {
             setOrders={(newOrders) => saveAndSync(items, newOrders)}
             waitlistConfig={waitlistConfig}
             setWaitlistConfig={(c) => { setWaitlistConfig(c); localStorage.setItem(STORAGE_KEY_WAITLIST, JSON.stringify(c)); }}
-            onManualSync={() => pushToGoogleSheets(items, orders)}
-            onTestSync={async () => { const s = await pushToGoogleSheets(items, orders, true); if (s) alert("Connection Verified!"); return s ? Promise.resolve() : Promise.reject(); }}
+            onManualSync={async () => { await pushToGoogleSheets(items, orders); }}
+            onTestSync={async () => { 
+              const success = await pushToGoogleSheets(items, orders, true); 
+              if (success) {
+                alert("Connection Verified!"); 
+              } else {
+                throw new Error("Connection failed");
+              }
+            }}
           />
         ) : (
           <BuyerPortal 
             mnemonic={activeMnemonic || ''} items={items} orders={orders}
             waitlistConfig={waitlistConfig} onOrderPlaced={saveAndSync}
-            isLoadingInventory={isLoadingItems}
+            isLoadingInventory={isLoadingItems || !hasAttemptedInitialSync.current}
           />
         )}
       </main>
