@@ -55,7 +55,6 @@ const App: React.FC = () => {
           quantity: parseInt(it.quantity) || 0,
           mnemonic: it.mnemonic || '',
           order: idx,
-          // Extremely robust parsing for Google Sheet values
           allowUpsell: 
             String(it.allowUpsell).toUpperCase() === 'TRUE' || 
             it.allowUpsell === true || 
@@ -170,7 +169,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Hide navigation header for buyers entirely */}
+      {/* HEADER IS HIDDEN FOR BUYERS TO ENSURE NO ACCESS TO SELLER WEB */}
       {view === 'seller' && (
         <nav className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
           <div className="flex items-center gap-2">
